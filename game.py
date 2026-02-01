@@ -37,6 +37,9 @@ class Game:
         self.world_generator = WorldGenerator()
         self.collision_manager = CollisionManager(self.player)
         self.score = 0
+        self.xp = 0
+        self.level = 1
+        self.next_level_xp = 50
         self.max_y = 0 # To track forward progress
 
     def run(self):
@@ -112,7 +115,15 @@ class Game:
                     # 2. Check Static Obstacles
                     if self.collision_manager.can_move(tx, ty, self.world_generator.get_lanes()):
                         self.player.start_move(tx, ty)
-                        if dy < 0: self.score += 1 # Only score on forward move? 
+                        if dy < 0: 
+                             self.score += 1 
+                             # Gain XP for moving forward (simulating collecting points)
+                             self.xp += 10
+                             if self.xp >= self.next_level_xp:
+                                 self.xp = 0
+                                 self.level += 1
+                                 self.next_level_xp = int(self.next_level_xp * 1.5)
+                        
                         # Actually score is max distance.
                         
         # Update World (Lane spawning)
@@ -143,38 +154,153 @@ class Game:
                 self.high_score = self.score
 
     def render_playing(self):
-        self.screen.fill(COLOR_BG)
+        # 3D TILT EFFECT
+        # We render the entire game world onto a temporary surface first.
+        # Then we rotate/scale that surface and blit it to the main screen.
+        
+        # Buffer size needs to be larger to accommodate rotation without clipping corners
+        buffer_width = SCREEN_WIDTH + 400
+        buffer_height = SCREEN_HEIGHT + 400
+        world_surf = pygame.Surface((buffer_width, buffer_height))
+        world_surf.fill(COLOR_BG)
+        
+        # We need to offset rendering by (buffer_width - SCREEN_WIDTH)/2 to center it on the buffer
+        offset_x = 200
+        offset_y = 200
         
         # Render Order:
         # 1. Backgrounds of all lanes
         lanes = self.world_generator.get_lanes()
         for lane in lanes:
-            lane.render_background(self.screen, self.camera)
+            # Modified render_background to accept offset? No, we can just shift the context.
+            # But the 'camera' applies Y shift. We need X shift manually or modify camera?
+            # Easiest: Just modify where we blit.
+            # Actually, `lane.render_background` uses `surface.blit`.
+            # We can't easily inject offset_x into `render_background` without changing the method signature.
+            # Let's create a temporary wrapper or just manually draw here?
+            # Re-implementing background drawing here is safer than refactoring everything.
             
+            screen_y = self.camera.apply(lane.y) + offset_y
+            # Note: We draw WIDER than screen width on the buffer to fill corners after rotation
+            # Draw -200 to +200 range
+            if -TILE_SIZE < screen_y < buffer_height:
+                color = COLOR_GRASS
+                if lane.type == 'road': color = COLOR_ROAD
+                elif lane.type == 'river': color = COLOR_RIVER
+                elif lane.type == 'rail': color = COLOR_RAIL
+                if lane.type == 'grass' and lane.index % 2 == 0: color = COLOR_GRASS_LIGHT
+                
+                rect = pygame.Rect(0, screen_y, buffer_width, TILE_SIZE)
+                pygame.draw.rect(world_surf, color, rect)
+                
+                # Details
+                if lane.type == 'road':
+                    pygame.draw.line(world_surf, COLOR_ROAD_MARKING, (0, screen_y + TILE_SIZE - 2), (buffer_width, screen_y + TILE_SIZE - 2), 2)
+                elif lane.type == 'rail':
+                   for i in range(0, buffer_width, 20):
+                        pygame.draw.rect(world_surf, COLOR_RAIL_METAL, (i, screen_y + 2, 4, TILE_SIZE - 4))
+                   pygame.draw.line(world_surf, COLOR_RAIL_METAL, (0, screen_y + 10), (buffer_width, screen_y + 10), 4)
+                   pygame.draw.line(world_surf, COLOR_RAIL_METAL, (0, screen_y + TILE_SIZE - 10), (buffer_width, screen_y + TILE_SIZE - 10), 4)
+                   # Warning lights? We'd need to copy logic. Simplified here for now.
+                   if getattr(lane, 'train_active', False):
+                       c = (255,0,0) if int(pygame.time.get_ticks()/200)%2==0 else (100,0,0)
+                       pygame.draw.circle(world_surf, c, (50 + offset_x, screen_y + 5), 5)
+
         # 2. Gather All Entities
         render_list = []
-        
-        # Add Player
         render_list.append(self.player)
-        
-        # Add Lane Entities
         for lane in lanes:
             render_list.extend(lane.entities)
             
-        # Sort by Y position (Painter's Algorithm) regarding the bottom of the sprite
-        # For 2D top down, usually higher Y (lower on screen) draws LAST (on top).
-        # We need to sort by `y + height`.
-        # Note: Player Z affects draw position but not sort order (usually).
-        # Actually in Crossy Road, a jumping player is "above" the car locally but still behind the tree in front.
-        # Standard Y-sorting works well.
-        # Add slight bias to Player to ensure they draw ON TOP of logs/ground at same Y
-        render_list.sort(key=lambda e: e.y + e.height + (5 if e == self.player else 0))
+        render_list.sort(key=lambda e: e.y + e.height + (20 if e == self.player else 0))
         
         for entity in render_list:
-            entity.render(self.screen, self.camera, self.asset_manager)
+            # entity.render uses camera.apply(y). We need to ADD offset_x to x and offset_y to y
+            # But render takes (surface, camera, asset_manager).
+            # We can temporarily patch the camera? No.
+            # We can manually implement render here? Or patching Entity.render is better.
+            # Let's adjust entity.x temporarily? No, side effects.
+            # Best way: Use a Dummy Camera or just pass absolute position?
             
-        # UI
-        self.ui_manager.render_game_ui(self.screen, self.score, self.high_score)
+            # Let's hack it: Just modify the `render` call to support offset?
+            # Or manually blit here. Most entities use `asset_manager.get_image`.
+            
+            screen_y = self.camera.apply(entity.y) + offset_y
+            screen_x = entity.x + offset_x
+            
+             # Draw only if on buffer screen
+            if -entity.height < screen_y < buffer_height:
+                drawn = False
+                if entity.image_key:
+                    img = self.asset_manager.get_image(entity.image_key)
+                    if img:
+                        # Flip if moving left (negative speed)
+                        # We assume sprites face RIGHT by default
+                        if hasattr(entity, 'speed') and entity.speed < 0:
+                            img = pygame.transform.flip(img, True, False)
+                        draw_x = screen_x + (entity.width - img.get_width()) // 2
+                        draw_y = screen_y + entity.height - img.get_height()
+                        
+                        # Shadow (Cast on ground)
+                        # Shadow logic: Simple black rect/ellipse offset
+                        shadow_width = img.get_width()
+                        shadow_height = img.get_height() // 4 # Flattened
+                        if shadow_height < 5: shadow_height = 5
+                        
+                        # Create shadow surface
+                        s_surf = pygame.Surface((shadow_width, shadow_height), pygame.SRCALPHA)
+                        pygame.draw.ellipse(s_surf, (0, 0, 0, 80), (0, 0, shadow_width, shadow_height))
+                        
+                        if hasattr(entity, 'speed') and entity.speed < 0:
+                             # Shadow flip might not be needed for ellipse, but for complex shapes yes.
+                             # For uniformity, let's leave it unless we use shaped shadows.
+                             pass
+                        
+                        # Position: Bottom of entity + Offset
+                        # We want it to look like light is from Top-Left, so shadow falls Bottom-Right
+                        # Base Y is screen_y + entity.height
+                        
+                        sh_x = draw_x + 10 # Offset X
+                        sh_y = (screen_y + entity.height) - (shadow_height // 2) + 5 # Offset Y (Ground level)
+                        
+                        world_surf.blit(s_surf, (sh_x, sh_y))
+
+
+                        # Player Z
+                        if entity == self.player: draw_y -= entity.z
+                        
+                        world_surf.blit(img, (draw_x, draw_y))
+                        drawn = True
+                
+                if not drawn:
+                    rect = pygame.Rect(screen_x, screen_y, entity.width, entity.height)
+                    if entity == self.player: rect.y -= entity.z
+                    pygame.draw.rect(world_surf, entity.color, rect)
+
+
+        # TRANSFORM: Rotate 15 degrees and Scale?
+        # A simple rotation is enough to give the "isometric" feel if sprites are 2.5D.
+        # But Crossy Road is barely rotated, it's mostly orthographic 3D.
+        # Pygame can't do real 3D. 
+        # But we can rotate the whole screen Z-axis slightly (-5 deg?) no that tilts it sideways.
+        # We need X-axis tilt? Pygame handles 2D surfaces.
+        # We can't tilt 'into' the screen easily.
+        
+        # Wait, user asked: "camera is rotated at an angle". 
+        # Usually implies Isometric (45 deg Y turn) or just Perspective.
+        # Crossy road is ISOMETRIC-like. 
+        # To fake Isometric in 2D: Rotate surface 45 degrees.
+        
+        rotated_surf = pygame.transform.rotate(world_surf, 345) # 15 degrees counter-clockwise
+        
+        # Center the rotated surface on the main screen
+        r_rect = rotated_surf.get_rect(center=(SCREEN_WIDTH/2, SCREEN_HEIGHT/2))
+        
+        self.screen.fill(COLOR_BG) # Clear margins
+        self.screen.blit(rotated_surf, r_rect)
+
+        # UI (Render normally on top, untransformed)
+        self.ui_manager.render_game_ui(self.screen, self.score, self.high_score, self.xp, self.next_level_xp, self.level)
 
     def update_game_over(self):
         if self.input_manager.get_action('confirm'):

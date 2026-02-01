@@ -54,38 +54,50 @@ class AssetManager:
         def create_surface(width, height):
              return pygame.Surface((width, height), pygame.SRCALPHA)
 
-        # Player (Chicken)
+        # Player (Chicken - Back View)
         # Dimensions: 30w, 30d (top), 30h (front)?
-        # Total surface size needed
         s_player = create_surface(40, 50)
-        # Legs
-        pygame.draw.rect(s_player, (255, 140, 0), (10, 35, 5, 10))
-        pygame.draw.rect(s_player, (255, 140, 0), (25, 35, 5, 10))
-        # Body (White) - 30x20 front, 15 depth
+        
+        # Legs (extended to touch bottom of 50px height)
+        # Body bottom is at 40 (5+10+25). Legs should start around 38-40.
+        pygame.draw.rect(s_player, (255, 140, 0), (10, 40, 5, 10))
+        pygame.draw.rect(s_player, (255, 140, 0), (25, 40, 5, 10))
+        
+        # Body (White)
         draw_block(s_player, 5, 5, 30, 25, 10, (255, 255, 255)) 
-        # Wing
+        
+        # Wings (Side Details)
         pygame.draw.rect(s_player, (220, 220, 220), (3, 20, 3, 10)) # Left
         pygame.draw.rect(s_player, (220, 220, 220), (34, 20, 3, 10)) # Right
-        # Beak
-        draw_block(s_player, 16, 20, 8, 4, 4, (255, 180, 0))
+        
+        # Tail (Rear)
+        draw_block(s_player, 12, 22, 16, 8, 4, (240, 240, 240))
+        
         # Comb (Red)
         draw_block(s_player, 16, 0, 4, 4, 5, (255, 0, 0))
-        # Eyes
-        pygame.draw.rect(s_player, (0,0,0), (32, 20, 2, 4)) # Right Eye (Side view ish)
-        pygame.draw.rect(s_player, (0,0,0), (6, 20, 2, 4))  # Left Eye
         
         self.images['player'] = s_player
 
         # Car
         def make_car(color):
-            s = create_surface(70, 50) 
-            # Wheels
-            pygame.draw.rect(s, (20,20,20), (10, 35, 10, 8))
-            pygame.draw.rect(s, (20,20,20), (50, 35, 10, 8))
+            s = create_surface(74, 55) # Slightly wider for wheels
+            
             # Body
-            draw_block(s, 0, 15, 70, 20, 15, color)
+            draw_block(s, 2, 15, 70, 20, 15, color)
+            
             # Cabin
-            draw_block(s, 10, 5, 40, 10, 10, (150, 210, 255))
+            draw_block(s, 12, 5, 40, 10, 10, (150, 210, 255))
+            
+            # Wheels (Draw AFTER body, and lower to touch bottom (55))
+            # Start at 43 -> 43+12 = 55
+            # Front Left
+            pygame.draw.rect(s, (20,20,20), (12, 43, 12, 12))
+            pygame.draw.rect(s, (100,100,100), (15, 46, 6, 6)) # Rim
+            
+            # Rear Left
+            pygame.draw.rect(s, (20,20,20), (52, 43, 12, 12))
+            pygame.draw.rect(s, (100,100,100), (55, 46, 6, 6)) # Rim
+            
             return s
             
         self.images['car'] = make_car((220, 50, 50))

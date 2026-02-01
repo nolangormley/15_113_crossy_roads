@@ -60,13 +60,18 @@ class GrassLane(Lane):
         
     def setup_obstacles(self):
         # Spawn random trees, leaving at least one path open
-        # We need a guaranteed path? Not necessarily per lane, but overall connectivity.
-        # But for simple reliable generation, just random holes.
+        # Refined logic: Prevent more than 2 consecutive trees to ensure passability
+        consecutive_trees = 0
+        
         for i in range(COLUMNS):
-            if random.random() < self.obstacle_chance:
+            # Reduced chance slightly to 0.15 + Check consecutive limit
+            if random.random() < 0.15 and consecutive_trees < 2:
                 # Calculate X based on column index
                 x = i * (SCREEN_WIDTH / COLUMNS) # Align to grid
                 self.entities.append(Obstacle(x, self.y))
+                consecutive_trees += 1
+            else:
+                consecutive_trees = 0
 
 class RoadLane(Lane):
     def __init__(self, y_pos, index, speed=100, direction=1):
@@ -74,9 +79,10 @@ class RoadLane(Lane):
         self.type = 'road'
         self.direction = direction # 1 or -1
         self.speed = speed * direction
-        self.spawn_timer = 0
+        self.min_interval = 3.0 # Increased from 1.5 to reduce density (50% less cars)
         self.spawn_interval = 2.0 # Variable
-        self.min_interval = 1.5
+        # Randomize start to prevent "wall of cars" when multiple lanes spawn at once
+        self.spawn_timer = random.uniform(0, self.min_interval)
         
         # Difficulty scaling could happen here
         
@@ -99,7 +105,7 @@ class RiverLane(Lane):
         self.type = 'river'
         self.direction = direction
         self.speed = speed * direction
-        self.spawn_timer = 0
+        self.spawn_timer = random.uniform(0, 2.0)
         self.spawn_interval = 2.0
         
     def update(self, dt):

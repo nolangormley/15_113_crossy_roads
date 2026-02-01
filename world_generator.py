@@ -9,9 +9,12 @@ class WorldGenerator:
         self.next_y = 0 # Starting Y
         self.lane_index = 0
         
+        self.last_biome = None
+
         # Initial safe zone
         for i in range(5):
             self.add_lane('grass_safe')
+            self.last_biome = 'grass'
             
     def update(self, camera_y, dt):
         # Cull old lanes
@@ -35,7 +38,7 @@ class WorldGenerator:
         for lane in self.lanes:
             lane.update(dt)
 
-    def add_lane(self, lane_type, difficulty_multiplier=1.0):
+    def add_lane(self, lane_type, difficulty_multiplier=1.0, direction_override=None):
         if lane_type == 'grass_safe':
             l = GrassLane(self.next_y, self.lane_index)
             l.entities = [] # Clear obstacles
@@ -43,10 +46,12 @@ class WorldGenerator:
             l = GrassLane(self.next_y, self.lane_index)
         elif lane_type == 'road':
             speed = 100 + (self.lane_index * 0.5) # Scale speed
-            l = RoadLane(self.next_y, self.lane_index, speed=speed, direction=random.choice([-1, 1]))
+            direction = direction_override if direction_override is not None else random.choice([-1, 1])
+            l = RoadLane(self.next_y, self.lane_index, speed=speed, direction=direction)
         elif lane_type == 'river':
             speed = 80 + (self.lane_index * 0.4)
-            l = RiverLane(self.next_y, self.lane_index, speed=speed, direction=random.choice([-1, 1]))
+            direction = direction_override if direction_override is not None else random.choice([-1, 1])
+            l = RiverLane(self.next_y, self.lane_index, speed=speed, direction=direction)
         elif lane_type == 'rail':
              l = RailLane(self.next_y, self.lane_index)
              
@@ -55,23 +60,50 @@ class WorldGenerator:
         self.lane_index += 1
 
     def generate_next_batch(self):
-        # Weighted random choice for "Biome"
         # Biomes: Field (Grass), Highway (Roads), Water (Rivers), Track (Rails)
+        # Ensure we don't repeat the same biome to keep sizes restrained
         
-        choice = random.random()
-        difficulty = 1.0 + (abs(self.next_y) / 5000.0) # Scale with distance
+        available_biomes = ['grass', 'road', 'river', 'rail']
         
-        if choice < 0.4: # 40% Grass
-            count = random.randint(1, 4)
+        # Simple weighted selection logic that respects "don't repeat"
+        if self.last_biome in available_biomes:
+            available_biomes.remove(self.last_biome)
+            
+        choice = random.choice(available_biomes)
+        
+        # Difficulty scaling could adjust specific params, but type selection is now uniform among remaining
+        
+        if choice == 'grass':
+            count = random.randint(3, 5)
             for _ in range(count): self.add_lane('grass')
-        elif choice < 0.7: # 30% Road
-            count = random.randint(1, 5)
+            self.last_biome = 'grass'
+            
+        elif choice == 'road':
+            count = random.randint(3, 5)
             for _ in range(count): self.add_lane('road')
-        elif choice < 0.9: # 20% Water
-            count = random.randint(1, 4)
-            for _ in range(count): self.add_lane('river')
-        else: # 10% Rail
+            self.last_biome = 'road'
+            
+        elif choice == 'river':
+            count = random.randint(3, 5)
+            # Alternate flow direction for adjacent rivers
+            start_dir = random.choice([-1, 1])
+            for i in range(count): 
+                # i=0 -> start_dir, i=1 -> -start_dir, etc.
+                direction = start_dir * (1 if i % 2 == 0 else -1)
+                
+                # We need to modify add_lane to accept explicit direction for river
+                # Currently add_lane randomizes it internally for river/road if not exposed.
+                # Let's override it by modifying add_lane signature or just hacking it here.
+                # Actually `add_lane` generates the lane object.
+                # Let's extract the creation logic or pass kwargs.
+                self.add_lane('river', direction_override=direction)
+                
+            self.last_biome = 'river'
+            
+        elif choice == 'rail':
+            # Rails are usually single or distinct.
             self.add_lane('rail')
+            self.last_biome = 'rail'
             
     def get_lanes(self):
         return self.lanes
